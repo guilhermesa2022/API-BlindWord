@@ -1,12 +1,8 @@
 package com.hotTable.API_BlindWord.logic;
 
-import com.hotTable.API_BlindWord.entity.FiveCharWords;
 import com.hotTable.API_BlindWord.repository.WordRepository;
-import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
-import org.springframework.stereotype.Service;
 
-@Service
 public class ManegerWord {
 
     private final WordRepository wordRepository;
@@ -33,9 +29,13 @@ public class ManegerWord {
 
     private String getSecretWord() {
         if (secretWord == null) {
+            long maxId = wordRepository.findMaxId()
+                    .orElseThrow(() -> new IllegalStateException("No active words found in database."));
 
-            secretWord = wordRepository.findRandomWord().orElseThrow(() -> new IllegalStateException("No active words found in database."));
+            long randomId = ThreadLocalRandom.current().nextLong(maxId + 1);
 
+            secretWord = wordRepository.findRandomWordFromId(randomId)
+                    .orElseThrow(() -> new IllegalStateException("No active words found in database."));
         }
 
         return secretWord;
