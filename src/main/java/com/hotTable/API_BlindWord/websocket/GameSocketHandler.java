@@ -1,5 +1,9 @@
 package com.hotTable.API_BlindWord.websocket;
 
+import com.hotTable.API_BlindWord.logic.Game;
+import com.hotTable.API_BlindWord.logic.GameSession;
+import com.hotTable.API_BlindWord.logic.ManegerWord;
+import com.hotTable.API_BlindWord.repository.WordRepository;
 import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -16,34 +20,59 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class GameSocketHandler extends TextWebSocketHandler {
 
+    private final WordRepository wordRepository;
     private final Map<String, WebSocketSession> players = new ConcurrentHashMap<>();
-    private final Queue<String> QueueOfPlayes = new LinkedList<>();
+    private final Queue<String> queueOfPlayes = new LinkedList<>();
+    private final Map<String, GameSession> mapGameSession = new ConcurrentHashMap<>();
     //private final Map<String, ManagerOfGames> Game = new ConcurrentHashMap<>();
+
+    public GameSocketHandler(WordRepository wordRepository) {
+        this.wordRepository = wordRepository;
+    }
 
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) throws Exception {
-        players.put(session.getId(), session);
-        //QueueOfPlayes.add(session.getId());
+
+        sendTo(session, """
+            {
+              "ation": "await"
+            }
+            """);
 
         System.out.println("Jogador ligado: " + session.getId());
 
-        sendTo(session.getId(), """
+        System.out.println("queueOfPlayes.isEmpty() : " + queueOfPlayes.isEmpty());
+
+        WebSocketSession adversary;
+        if(!queueOfPlayes.isEmpty()) {
+            adversary = players.remove(queueOfPlayes.poll());
+
+            GameSession gameSession = new GameSession(session, adversary, wordRepository);
+
+            mapGameSession.put(adversary.getId(), gameSession);
+            mapGameSession.put(session.getId(), gameSession);
+
+            sendTo(session, """
+            {
+              "ation": "game"
+            }
+            """);
+            sendTo(adversary, """
+            {
+              "ation": "game"
+            }
+            """);
+        }else{
+            players.put(session.getId(), session);
+            queueOfPlayes.add(session.getId());
+
+            sendTo(session.getId(), """
             {
               "type": "CONNECTED"
             }
             """);
 
-
-        if(QueueOfPlayes.isEmpty()){
-            sendTo(session.getId(), """
-            {
-              "ation": "await"
-            }
-            """);
-            QueueOfPlayes.add(session.getId());
-        }else{
-            
         }
     }
 
@@ -53,6 +82,10 @@ public class GameSocketHandler extends TextWebSocketHandler {
         String payload = message.getPayload();
 
         System.out.println("Mensagem de " + playerId + ": " + payload);
+
+        GameSession gameSession = mapGameSession.get(playerId);
+
+        gameSession.makeAAttenmpt(playerId, payload);
 
         /*
          * Isto é o teu receive.
@@ -96,6 +129,16 @@ public class GameSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    public void sendTo(WebSocketSession session, String message) throws IOException {
+        if (session == null || !session.isOpen()) {
+            return;
+        }
+
+        synchronized (session) {
+            session.sendMessage(new TextMessage(message));
+        }
+    }
+
     public void broadcast(String message) throws IOException {
         for (WebSocketSession session : players.values()) {
             if (session.isOpen()) {
@@ -112,6 +155,10 @@ public class GameSocketHandler extends TextWebSocketHandler {
 
     public Map<String, WebSocketSession> getPlayers() {
         return players;
+    }
+
+    public Game createGame() {
+        return new Game(new ManegerWord(wordRepository));
     }
 }
 
